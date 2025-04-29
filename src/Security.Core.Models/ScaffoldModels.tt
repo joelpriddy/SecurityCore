@@ -1,36 +1,50 @@
-﻿<#@ template language="C#" debug="false" hostspecific="true" #>
+﻿<#@ template language="C#" debug="true" hostspecific="true" #>
 <#@ assembly name="System.Core" #>
-<#@ assembly name="Microsoft.EntityFrameworkCore.Design" #>
-<#@ assembly name="Pomelo.EntityFrameworkCore.MySql" #>
 <#@ import namespace="System" #>
 <#@ import namespace="System.Collections.Generic" #>
-<#@ import namespace="Microsoft.EntityFrameworkCore.Scaffolding" #>
+<#@ import namespace="Microsoft.EntityFrameworkCore" #>
 <#@ import namespace="Microsoft.EntityFrameworkCore.Design" #>
 <#@ import namespace="Microsoft.EntityFrameworkCore.Metadata" #>
-<#@ output extension=".cs" #>
+<#@ import namespace="Microsoft.Extensions.DependencyInjection" #>
 
 <#
-    string environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+    // Dynamically resolve EF Core assemblies
+    string nugetPackagesPath = Environment.GetEnvironmentVariable("NUGET_PACKAGES") ??
+                               Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
+
+    string efCoreDesignPath = Path.Combine(nugetPackagesPath, "microsoft.entityframeworkcore.design", "8.0.11", "lib", "net8.0", "Microsoft.EntityFrameworkCore.Design.dll");
+    string efCorePath = Path.Combine(nugetPackagesPath, "microsoft.entityframeworkcore", "8.0.11", "lib", "net8.0", "Microsoft.EntityFrameworkCore.dll");
+
+    Host.ResolveAssembly(efCoreDesignPath);
+    Host.ResolveAssembly(efCorePath);
+
+    string environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
 
     if (environment != "Development") 
     {
-        WriteLine("// Skipped scaffolding in non-development environment.");
-        return;
+        throw new InvalidOperationException("Scaffolding is only allowed in the development environment.");
     }
 
-    var envPath = @"C:\Users\JoelPriddy\source\joelpriddy\TestFiles\Security\appsettings.json";
+    var envPath = @"C:\Users\JoelPriddy\source\joelpriddy\TestFiles\Security\devsecrets.json";
     var encryption = new EncryptionService();
+    var service = new EncryptedSecretService(null, encryption);
 
-    if (!System.IO.File.Exists(envPath))
+    if (!File.Exists(envPath))
     {
-        WriteLine("// No credentials found in environment variables. Models will not be updated.");
-        return;
+        throw new FileNotFoundException($"The environment file was not found at path: {envPath}");
     }
 
-    string dbHost = service.GetSecret("DB_HOST", environment);
-    string dbName = Environment.GetEnvironmentVariable("DB_NAME");
-    string dbUser = Environment.GetEnvironmentVariable("DB_USER");
-    string dbPassword = Environment.GetEnvironmentVariable("DB_PASSWORD");
+    // Initialize services
+
+    string dbHost = service.GetSecret("DB_HOST") ?? string.Empty;
+    string dbName = service.GetSecret("DB_NAME") ?? string.Empty;
+    string dbUser = service.GetSecret("DB_USER") ?? string.Empty;
+    string dbPassword = service.GetSecret("DB_PASSWORD") ?? string.Empty;
+
+    if(dbHost == string.Empty || dbName == string.Empty || dbUser == string.Empty || dbPassword == string.Empty)
+    {
+        throw new InvalidOperationException("Scaffolding is only allowed if the machine contains a file with the appropriate credentials.");
+    }
 
     string connectionString = $"Server={dbHost};Database={dbName};User={dbUser};Password={dbPassword};";
 
@@ -57,3 +71,4 @@
         WriteLine(entityFile.Code);
     }
 #>
+
